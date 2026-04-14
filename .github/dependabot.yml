@@ -4,3 +4,73 @@ updates:
     directory: /
     schedule:
       interval: weekly
+---
+name: Lint
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install yq
+        uses: mikefarah/yq@v4
+      - name: Lint JSON files
+        run: |
+          find . -name '*.json' -exec yq -iP -o=json '.' {} \;
+      - name: Lint YAML files
+        run: |
+          find . -name '*.yml' -o -name '*.yaml' | xargs yq -iP '.'
+      - name: Commit lint fixes
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: 'style: lint json and yaml files'
+---
+name: validate
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install dependencies
+        run: |
+          pip install check-jsonschema
+      - name: Download schemas
+        run: |
+          wget https://raw.githubusercontent.com/monome/maiden/main/pkg/catalog/source.schema.json
+          wget https://raw.githubusercontent.com/monome/maiden/main/pkg/catalog/catalog.schema.json
+      - name: Validate catalogs
+        run: |
+          check-jsonschema --schemafile catalog.schema.json base.json community.json
+---
+name: Trigger https://norns.community Build
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger https://norns.community Build
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+        run: |
+          gh api repos/monome-community/norns-community/dispatches \
+            --method POST \
+            -f event_type=trigger_build_via_norns_community_merge \
+            -f 'client_payload[unit]=false' \
+            -f 'client_payload[integration]=true'
